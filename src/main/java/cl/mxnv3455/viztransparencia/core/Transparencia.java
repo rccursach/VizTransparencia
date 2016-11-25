@@ -5,8 +5,12 @@
  */
 package cl.mxnv3455.viztransparencia.core;
 import cl.mxnv3455.viztransparencia.db.*;
+import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Set;
+import java.util.regex.Pattern;
 import org.graphstream.graph.*;
 import org.graphstream.graph.implementations.*;
 import org.neo4j.driver.v1.Record;
@@ -27,31 +31,18 @@ public class Transparencia {
     
     public void makeGraphFromQuery(String query) {
         Graph g = new SingleGraph("grafoCasos");
+        g.addAttribute("ui.stylesheet", "node.Caso { fill-color: #3333EE; }");
+        g.addAttribute("ui.stylesheet", "node.Reclamante { fill-color: #33EE33; }");
+        g.addAttribute("ui.stylesheet", "node.Reclamado { fill-color: #EE3333; }");
+        g.addAttribute("ui.stylesheet", "node.Motivo { fill-color: #EE33EE; }");
+        g.addAttribute("ui.stylesheet", "node.Estado { fill-color: #EEEE33; }");
+        
         StatementResult res = db.ejecutarConsulta(query);
         db.close();
         
         while(res.hasNext()) {
             Record r = res.next();
-            Node n = (Node)r.asMap().get("n");
-            Relationship re = (Relationship)r.asMap().get("r");
-            Node o = (Node)r.asMap().get("o");
-            
-            String l_n = getNodeLabel(n);
-            //String l_re = getNodeLabel(re);
-            String l_o = getNodeLabel(o);
-            
-            System.out.println(l_n);
-            System.out.println(r.asMap());
-            //System.out.println(n.asMap());
-            //System.out.println(n.labels().);
-            try {
-                g.addNode(String.valueOf(n.id()));
-                g.addNode(String.valueOf(o.id()));
-                g.addEdge(String.valueOf(re.id()), String.valueOf(n.id()), String.valueOf(o.id()));
-            }
-            catch(org.graphstream.graph.IdAlreadyInUseException e) {
-                System.err.println(e.getMessage());
-            }
+            recordToGraph(r, g);
         }
         
         g.display();
@@ -72,4 +63,112 @@ public class Transparencia {
     private String getRelLabel(Relationship n) {
         return n.type();
     }
+        
+    private void recordToGraph(Record r, Graph g){
+        Map m = r.asMap();
+        Set s = m.keySet();
+        Iterator it = s.iterator();
+        ArrayList<Relationship> rels = new ArrayList();
+        
+        while(it.hasNext()) {
+            Object o = m.get(it.next().toString());
+            String cn = getClassName(o);
+            if(cn.equals("InternalNode")) {
+                Node node = (Node)o;
+                try {
+                    String label = getNodeLabel(node);
+                    org.graphstream.graph.Node n = g.addNode(String.valueOf(node.id()));
+                    n.addAttribute("ui.class", label);
+                }
+                catch(org.graphstream.graph.IdAlreadyInUseException e) {
+                    System.err.println(e.getMessage());
+                }
+            }
+            else if(cn.equals("InternalRelationship")) {
+                Relationship rel = (Relationship)o;
+                rels.add(rel);
+            }
+        }
+        
+        rels.forEach((rel) -> {
+            try {
+                String label = getRelLabel(rel);
+                org.graphstream.graph.Edge e = g.addEdge(String.valueOf(rel.id()), String.valueOf(rel.startNodeId()), String.valueOf(rel.endNodeId()));
+                e.addAttribute("ui.class", label);
+            }
+            catch(org.graphstream.graph.IdAlreadyInUseException | org.graphstream.graph.ElementNotFoundException e) {
+                System.err.println(e.getMessage());
+            }
+        });
+    }
+    
+    private String getClassName(Object o) {
+        String long_cn = o.getClass().getName();
+        String[] long_cn_tokenized = long_cn.split(Pattern.quote("."));
+        String cn = long_cn_tokenized[long_cn_tokenized.length -1];
+        return cn;
+    }
+    
+    /**
+     * ObtenerMotivos entrega una lista de motivos disponibles
+     * @param consultaMotivos
+     * @return 
+     */
+    
+    public String[] obtenerMotivos(String consultaMotivos) {
+        ArrayList<String> lista = new ArrayList<>();
+        StatementResult res = db.ejecutarConsulta(consultaMotivos);
+        int cont=0;
+        while (res.hasNext()) {
+            
+            Record r = res.next();
+            Node n = (Node) r.asMap().get("n");
+            String l_n = "";
+            
+            try {
+                l_n = (String)n.asMap().get("Motivo");
+                lista.add(l_n);
+            } catch (NoSuchElementException e) {
+                System.err.println(e.getMessage());
+            }
+            cont++;
+        }
+        String[] respuesta= new String[cont];
+        for (int i = 0; i < respuesta.length; i++) {
+            respuesta[i]=lista.get(i);
+            
+        }
+        return  respuesta;
+    }
+    
+    /**
+     * obtenerEstados entrega una lista de estados disponibles
+     * @param consultaEstados
+     * @return 
+     */
+    public String[] obtenerEstados(String consultaEstados) {
+        ArrayList<String> lista = new ArrayList();
+        StatementResult res = db.ejecutarConsulta(consultaEstados);
+        int cont=0;
+        while (res.hasNext()) {
+            
+            Record r = res.next();
+            Node n = (Node) r.asMap().get("n");
+            String l_n = "";
+            try {
+                l_n = (String)n.asMap().get("estado");
+                lista.add(l_n);
+            } catch (NoSuchElementException e) {
+                System.err.println(e.getMessage());
+            }
+            cont++;
+        }
+        String[] respuesta= new String[cont];
+        for (int i = 0; i < respuesta.length; i++) {
+            respuesta[i]=lista.get(i);
+            
+        }
+        return respuesta;
+    }
+
 }
